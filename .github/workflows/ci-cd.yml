@@ -1,0 +1,254 @@
+name: Admin Panel CI/CD Pipeline
+
+on:
+  push:
+    branches: [ '**' ]
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy to environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+          - skip
+        default: 'skip'
+      branch:
+        description: 'Branch/tag to deploy'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: '22'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ============================================
+  # Job 1: Build and Lint
+  # ============================================
+  build:
+    name: Build and Lint
+    runs-on: ubuntu-latest
+    outputs:
+      branch_tag: ${{ steps.extract_branch.outputs.BRANCH_TAG }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build application
+        run: npm run build
+        env:
+          # API URL is public — safe to use here
+          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://api.yourdomain.com' }}
+          # VITE_ADMIN_SECRET is intentionally NOT set here — entered manually at login
+
+      - name: Extract branch name
+        id: extract_branch
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.branch }}" ]]; then
+            BRANCH_TAG=$(echo "${{ github.event.inputs.branch }}" | sed 's/\//-/g')
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            BRANCH_TAG=${GITHUB_REF#refs/tags/}
+          else
+            BRANCH=${GITHUB_REF#refs/heads/}
+            BRANCH_TAG=$(echo $BRANCH | sed 's/\//-/g')
+          fi
+          echo "BRANCH_TAG=$BRANCH_TAG" >> $GITHUB_OUTPUT
+          echo "Branch/Tag: $BRANCH_TAG"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ steps.extract_branch.outputs.BRANCH_TAG }}
+          path: dist/
+          retention-days: 7
+
+  # ============================================
+  # Job 2: Build and Push Docker Image
+  # ============================================
+  docker:
+    name: Build and Push Docker Image
+    needs: build
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && (
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/develop' ||
+        startsWith(github.ref, 'refs/tags/v')
+      )) ||
+      (github.event_name == 'workflow_dispatch' &&
+        github.event.inputs.environment != 'skip')
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=${{ needs.build.outputs.branch_tag }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      - name: Image Info
+        run: |
+          echo "✅ Docker image built and pushed!"
+          echo "📦 Images:"
+          echo "${{ steps.meta.outputs.tags }}"
+
+  # ============================================
+  # Job 3: Deploy to DEV (auto on main)
+  # ============================================
+  deploy-dev:
+    name: Deploy to DEV (Auto)
+    needs: [ build, docker ]
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    environment:
+      name: development
+
+    steps:
+      - name: Deploy to DEV Server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEV_SERVER_HOST }}
+          username: ${{ secrets.DEV_SERVER_USERNAME }}
+          key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.DEV_SSH_PASSPHRASE }}
+          script: |
+            set -e
+            cd /opt/everage
+
+            echo "📦 Deploying admin panel..."
+            sed -i 's/ADMIN_IMAGE_TAG=.*/ADMIN_IMAGE_TAG=main/' .env
+
+            echo "🔐 Logging in to registry..."
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            echo "🐳 Pulling latest image..."
+            docker compose pull admin-service
+
+            echo "🚀 Starting admin panel..."
+            docker compose up -d admin-service
+
+            echo "⏳ Waiting for admin-service to start..."
+            sleep 10
+
+            if curl -f http://localhost:8081/health 2>/dev/null; then
+              echo "✅ Admin panel is healthy!"
+            else
+              echo "⚠️ Health check failed, checking logs..."
+              docker compose logs --tail=50 admin-service
+            fi
+
+            docker compose ps
+            echo "✅ Admin deployment completed!"
+
+  # ============================================
+  # Job 4: Manual Deploy to DEV
+  # ============================================
+  deploy-dev-manual:
+    name: Deploy to DEV (Manual)
+    needs: [ build, docker ]
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.environment == 'dev'
+    environment:
+      name: development
+
+    steps:
+      - name: Deploy to DEV Server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEV_SERVER_HOST }}
+          username: ${{ secrets.DEV_SERVER_USERNAME }}
+          key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.DEV_SSH_PASSPHRASE }}
+          script: |
+            set -e
+            cd /opt/everage
+
+            BRANCH_TAG="${{ needs.build.outputs.branch_tag }}"
+            echo "📦 Manual deployment: $BRANCH_TAG"
+
+            sed -i "s/ADMIN_IMAGE_TAG=.*/ADMIN_IMAGE_TAG=${BRANCH_TAG}/" .env
+
+            echo "🔐 Logging in to registry..."
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            echo "🐳 Pulling image: ${BRANCH_TAG}"
+            docker compose pull admin-service
+
+            echo "🚀 Starting admin panel..."
+            docker compose up -d admin-service
+
+            echo "⏳ Waiting..."
+            sleep 10
+
+            if curl -f http://localhost:8081/health 2>/dev/null; then
+              echo "✅ Admin panel is healthy!"
+            else
+              echo "⚠️ Health check failed"
+              docker compose logs --tail=50 admin-service
+            fi
+
+            docker compose ps
+            echo "✅ Manual deployment completed!"
