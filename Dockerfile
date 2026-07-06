@@ -7,12 +7,9 @@ RUN npm ci
 
 COPY . .
 
-# VITE_API_URL is injected at build time via GitHub Actions secret
-ARG VITE_API_URL
-ENV VITE_API_URL=$VITE_API_URL
-
-# VITE_ADMIN_SECRET must NOT be baked into the image
-# It is entered manually by the admin at login time
+# Build application
+# API calls go to /api which Nginx proxies to backend at runtime
+# VITE_ADMIN_SECRET must NOT be baked into the image - entered at login
 RUN npm run build
 
 # ---- Production image ----
