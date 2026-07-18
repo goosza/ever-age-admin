@@ -104,6 +104,20 @@
   color: #888;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 12px 0;
+}
+
+.pagination-info {
+  font-size: 0.85rem;
+  color: #666;
+}
+
 /* Order Detail */
 .back-btn {
   background: none;

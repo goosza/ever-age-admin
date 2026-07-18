@@ -2,11 +2,17 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { getItems, updateQuantity, deleteItem, type Item } from '../api/items';
 import ItemForm from '../components/ItemForm';
+import '../styles/orders.css';
 import '../styles/items.css';
+
+const PAGE_SIZE = 20;
 
 export default function ItemsPage() {
   const { secret } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editItem, setEditItem] = useState<Item | null>(null);
@@ -14,13 +20,17 @@ export default function ItemsPage() {
 
   const load = () => {
     setLoading(true);
-    getItems()
-      .then(setItems)
+    getItems({ page, size: PAGE_SIZE })
+      .then(result => {
+        setItems(result.content);
+        setTotalPages(result.totalPages);
+        setTotalElements(result.totalElements);
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [page]);
 
   const handleDelete = async (item: Item) => {
     if (!secret) return;
@@ -118,6 +128,28 @@ export default function ItemsPage() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {!loading && totalElements > 0 && (
+        <div className="pagination">
+          <button
+            className="btn-sm"
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+          >
+            ← Prev
+          </button>
+          <span className="pagination-info">
+            Page {page + 1} of {totalPages} ({totalElements} items)
+          </span>
+          <button
+            className="btn-sm"
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1}
+          >
+            Next →
+          </button>
+        </div>
       )}
     </div>
   );

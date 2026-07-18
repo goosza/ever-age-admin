@@ -26,9 +26,26 @@ export interface ItemRequest {
   existingImageUrls?: string[];
 }
 
+export interface Page<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+}
+
+export interface GetItemsParams {
+  page?: number;
+  size?: number;
+}
+
 // Items are public to read
-export async function getItems(): Promise<Item[]> {
-  const res = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/items`);
+export async function getItems(params: GetItemsParams = {}): Promise<Page<Item>> {
+  const query = new URLSearchParams();
+  query.set('page', String(params.page ?? 0));
+  query.set('size', String(params.size ?? 20));
+
+  const res = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/items?${query.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch items: ${res.status}`);
   return res.json();
 }

@@ -36,9 +36,27 @@ export interface Order {
   updatedAt: string;
 }
 
-export async function getOrders(secret: string, status?: string): Promise<Order[]> {
-  const path = `/api/admin/orders${status ? `?status=${status}` : ''}`;
-  const res = await adminFetch(path, {}, secret);
+export interface Page<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+}
+
+export interface GetOrdersParams {
+  status?: string;
+  page?: number;
+  size?: number;
+}
+
+export async function getOrders(secret: string, params: GetOrdersParams = {}): Promise<Page<Order>> {
+  const query = new URLSearchParams();
+  if (params.status) query.set('status', params.status);
+  query.set('page', String(params.page ?? 0));
+  query.set('size', String(params.size ?? 20));
+
+  const res = await adminFetch(`/api/admin/orders?${query.toString()}`, {}, secret);
   if (!res.ok) throw new Error(`Failed to fetch orders: ${res.status}`);
   return res.json();
 }

@@ -21,22 +21,36 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: '#ef4444',
 };
 
+const PAGE_SIZE = 20;
+
 export default function OrdersPage() {
   const { secret } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState('');
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Reset to page 0 whenever the status filter changes.
+  useEffect(() => {
+    setPage(0);
+  }, [filter]);
 
   useEffect(() => {
     if (!secret) return;
     setLoading(true);
-    getOrders(secret, filter || undefined)
-      .then(setOrders)
+    getOrders(secret, { status: filter || undefined, page, size: PAGE_SIZE })
+      .then(result => {
+        setOrders(result.content);
+        setTotalPages(result.totalPages);
+        setTotalElements(result.totalElements);
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [secret, filter]);
+  }, [secret, filter, page]);
 
   return (
     <div className="page">
@@ -100,6 +114,28 @@ export default function OrdersPage() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {!loading && totalElements > 0 && (
+        <div className="pagination">
+          <button
+            className="btn-sm"
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+          >
+            ← Prev
+          </button>
+          <span className="pagination-info">
+            Page {page + 1} of {totalPages} ({totalElements} orders)
+          </span>
+          <button
+            className="btn-sm"
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1}
+          >
+            Next →
+          </button>
+        </div>
       )}
     </div>
   );
