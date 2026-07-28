@@ -6,7 +6,7 @@ on:
     tags:
       - 'v*.*.*'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
   workflow_dispatch:
     inputs:
       environment:
@@ -62,10 +62,10 @@ jobs:
 
       - name: Build application
         run: npm run build
-        env:
-          # API URL is public — safe to use here
-          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://api.yourdomain.com' }}
-          # VITE_ADMIN_SECRET is intentionally NOT set here — entered manually at login
+        # VITE_API_URL is intentionally not overridden here — it defaults to the
+        # relative "/api" path (see .env.production.example), since the admin
+        # panel's own nginx proxies /api/* to the backend on the same origin.
+        # VITE_ADMIN_SECRET is intentionally NOT set here — entered manually at login
 
       - name: Extract branch name
         id: extract_branch
@@ -98,6 +98,7 @@ jobs:
     if: |
       (github.event_name == 'push' && (
         github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/master' ||
         github.ref == 'refs/heads/develop' ||
         startsWith(github.ref, 'refs/tags/v')
       )) ||
@@ -126,7 +127,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
             type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
             type=raw,value=${{ needs.build.outputs.branch_tag }}
             type=semver,pattern={{version}}
@@ -153,7 +154,7 @@ jobs:
           echo "${{ steps.meta.outputs.tags }}"
 
   # ============================================
-  # Job 3: Deploy to DEV (auto on main)
+  # Job 3: Deploy to DEV (auto on main/master)
   # ============================================
   deploy-dev:
     name: Deploy to DEV (Auto)
@@ -161,7 +162,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     environment:
       name: development
 
@@ -178,7 +179,7 @@ jobs:
             cd /opt/everage
 
             echo "📦 Deploying admin panel..."
-            sed -i 's/ADMIN_IMAGE_TAG=.*/ADMIN_IMAGE_TAG=main/' .env
+            sed -i 's/ADMIN_IMAGE_TAG=.*/ADMIN_IMAGE_TAG=latest/' .env
 
             echo "🔐 Logging in to registry..."
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
