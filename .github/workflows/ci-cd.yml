@@ -167,6 +167,11 @@ jobs:
       name: development
 
     steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+
       - name: Deploy to DEV Server
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -217,6 +222,11 @@ jobs:
       name: development
 
     steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+
       - name: Deploy to DEV Server
         uses: appleboy/ssh-action@v1.0.0
         with:
