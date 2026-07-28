@@ -4,21 +4,28 @@ import { useAuth } from '../hooks/useAuth';
 import { getOrders, type Order } from '../api/orders';
 import '../styles/orders.css';
 
+// Must match backend entity.OrderStatus exactly — there is no "PAID" status;
+// an order moves straight to CONFIRMED once payment succeeds (see
+// StripeWebhookService.handleCheckoutSessionCompleted).
 const STATUS_OPTIONS: { label: string; value: string }[] = [
   { label: 'All', value: '' },
   { label: 'Pending', value: 'PENDING' },
-  { label: 'Paid', value: 'PAID' },
+  { label: 'Confirmed', value: 'CONFIRMED' },
+  { label: 'Processing', value: 'PROCESSING' },
   { label: 'Shipped', value: 'SHIPPED' },
   { label: 'Delivered', value: 'DELIVERED' },
   { label: 'Cancelled', value: 'CANCELLED' },
+  { label: 'Refunded', value: 'REFUNDED' },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
   PENDING: '#f59e0b',
-  PAID: '#3b82f6',
+  CONFIRMED: '#3b82f6',
+  PROCESSING: '#6366f1',
   SHIPPED: '#8b5cf6',
   DELIVERED: '#10b981',
   CANCELLED: '#ef4444',
+  REFUNDED: '#78716c',
 };
 
 const PAGE_SIZE = 20;
@@ -42,6 +49,7 @@ export default function OrdersPage() {
   useEffect(() => {
     if (!secret) return;
     setLoading(true);
+    setError(null);
     getOrders(secret, { status: filter || undefined, page, size: PAGE_SIZE })
       .then(result => {
         setOrders(result.content);
