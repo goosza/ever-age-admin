@@ -19,8 +19,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      // Verify by making a real admin request
-      const res = await adminFetch('/api/admin/orders?status=PAID', {}, secret.trim());
+      const res = await adminFetch('/api/admin/orders?size=1', {}, secret.trim());
       if (res.ok || res.status === 200) {
         login(secret.trim());
         navigate('/orders');
