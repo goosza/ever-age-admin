@@ -50,6 +50,18 @@ export async function getItems(params: GetItemsParams = {}): Promise<Page<Item>>
   return res.json();
 }
 
+// Fetches a single item fresh from the server. Used before opening the edit
+// form instead of reusing whatever is currently in the list's local state —
+// that local copy can be stale (e.g. right after another edit that hasn't
+// been re-fetched yet), and submitting a stale imageUrls snapshot as
+// existingImageUrls causes the backend to delete images that were actually
+// just added, since it treats "not in existingImageUrls" as "delete this".
+export async function getItem(uuid: string): Promise<Item> {
+  const res = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/items/${uuid}`);
+  if (!res.ok) throw new Error(`Failed to fetch item: ${res.status}`);
+  return res.json();
+}
+
 export async function createItem(secret: string, item: ItemRequest, images?: File[]): Promise<Item> {
   const form = new FormData();
   form.append('item', new Blob([JSON.stringify(item)], { type: 'application/json' }));

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { getItems, updateQuantity, deleteItem, type Item } from '../api/items';
+import { getItems, getItem, updateQuantity, deleteItem, type Item } from '../api/items';
 import ItemForm from '../components/ItemForm';
 import '../styles/orders.css';
 import '../styles/items.css';
@@ -17,6 +17,7 @@ export default function ItemsPage() {
   const [error, setError] = useState<string | null>(null);
   const [editItem, setEditItem] = useState<Item | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -40,6 +41,22 @@ export default function ItemsPage() {
       load();
     } catch (e: any) {
       setError(e.message);
+    }
+  };
+
+  const handleEdit = async (item: Item) => {
+    // Fetch a fresh copy before editing — see getItem() in api/items.ts for why
+    // reusing the local list's copy of imageUrls can cause images to be
+    // deleted unintentionally.
+    setEditLoading(true);
+    try {
+      const fresh = await getItem(item.uuid);
+      setEditItem(fresh);
+      setShowForm(true);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -121,7 +138,9 @@ export default function ItemsPage() {
                   </span>
                 </td>
                 <td>
-                  <button className="btn-sm" onClick={() => { setEditItem(item); setShowForm(true); }}>Edit</button>
+                  <button className="btn-sm" onClick={() => handleEdit(item)} disabled={editLoading}>
+                    {editLoading ? '...' : 'Edit'}
+                  </button>
                   <button className="btn-sm btn-danger" onClick={() => handleDelete(item)}>Delete</button>
                 </td>
               </tr>
