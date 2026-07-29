@@ -91,6 +91,24 @@ export default function ItemForm({ item, secret, onDone, onCancel }: Props) {
           </label>
           <label>
             Images
+            {form.existingImageUrls && form.existingImageUrls.length > 0 && (
+              <div className="existing-images">
+                {form.existingImageUrls.map(url => (
+                  <div key={url} className="existing-image">
+                    <img src={url} alt="" className="existing-image-thumb" />
+                    <button
+                      type="button"
+                      className="existing-image-remove"
+                      aria-label="Remove image"
+                      onClick={() => set('existingImageUrls',
+                        (form.existingImageUrls ?? []).filter(u => u !== url))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <input type="file" multiple accept="image/*"
               onChange={e => setImages(Array.from(e.target.files ?? []))} />
             {images.length > 0 && <span className="sub-text">{images.length} file(s) selected</span>}
